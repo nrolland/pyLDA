@@ -30,6 +30,7 @@ def zeros(shape):
 
 
 def multinomial(n_add, param, n_dim = 1):
+    #s = sum(param)
     if 'numpy' in sys.modules:
         if n_dim == 1:
             res = numpy.random.multinomial(n_add, param)
@@ -220,10 +221,19 @@ def main(argv=None):
             #print "ntopic_by_doc",ntopic_by_doc
             param = [(nterm_by_topic_forthisword[topic] + beta) / (nterm_by_topic[topic] + beta) * \
                     (ntopic_by_doc_topic_forthisdoc[topic] + alpha) / (ntopic_by_doc[doc_id] + alpha) for topic in range(ntopics)]
+            s = sum(param)
+            param = [param[i] / s for i in range(ntopics)]
             if param == nulltopiccount:
                 pass
             return param
-                     
+        
+        def printmostfreqtopic():
+            ndocs_topics = [0]*ntopics            
+            for doc_id, doc in enumerate(docs.documents):
+                for topic in range(ntopics):
+                    ndocs_topics[topic] += ntopic_by_doc_topic[doc_id][topic]
+            print "Most topic among docs :",   sum(ndocs_topics) 
+                 
         def saveit():
             totalfreq = [0]*len(docs.vocabulary)
             for doc_id, doc in enumerate(docs.documents):
@@ -246,18 +256,17 @@ def main(argv=None):
         param = 0
         for iter in range(niters):
             for doc_id, doc in enumerate(docs.documents):
-
+                #print doc_id 
+                
                 words = doc.wordtoterm()
                 wordcount = doc.wordcount()
                 if iter == 0:
                     topic_for_words = multinomial(1, model_init,wordcount)
                     #print doc.wordcount()
                     #print "topics_for_words", type(topics_for_words), len(topics_for_words)
-                    #print "topics_for_words", type(topics_for_words[0]), len(topics_for_words[0])
-
+                    #print "topics_for_words", type(topics_for_words[0]), len(topics_for_word
                     #print "doc", (doc.wordtoterm())[:10]
-                    #input()
-                    
+                    #input()         
                     for i_word, term_id in enumerate(words):
                         #print "doc_id", type(doc_id),doc_id
                         #print "term_id", type(term_id),term_id
@@ -267,9 +276,11 @@ def main(argv=None):
                         #print "topic", topics_for_words[i_word], indice(topics_for_words[i_word])
                         #print z_doc_term[doc_id][term_id]
                         z_doc_term[doc_id,term_id] = indice(topic_for_words[i_word])
+                        if i_word == 0 and doc_id ==0:
+                            print  z_doc_term[doc_id,term_id]
                         #print "ok"
                         add(doc_id, term_id)
-                else:
+                else:                    
                     for i_word, term_id in enumerate(words):
                         remove(doc_id, term_id)
                         #print "zip(*nterm_by_topic_term)[term_id]", type(zip(*nterm_by_topic_term)[term_id]), len(zip(*nterm_by_topic_term)[term_id])
@@ -285,6 +296,12 @@ def main(argv=None):
                         #    if i_word - (i_word / 100)*100== 0 :
                         #        print param
                         new_topic = multinomial(1, param)
+                        #print doc_id 
+                        #input()
+                        #if i_word == 0 and doc_id ==0:
+                        #    print  z_doc_term[doc_id,term_id]
+                        #    input()
+                        #print  z_doc_term[doc_id,term_id],param,new_topic, indice(new_topic)
                         z_doc_term[doc_id][term_id] = indice(new_topic)
                         add(doc_id, term_id)
                     if doc_id - (doc_id / 100)*100== 0:
