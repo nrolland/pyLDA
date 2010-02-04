@@ -20,13 +20,30 @@ def flatten(x):
     return result
  
 def zeros(shape):
+    '''
+        test  = zeros((2,10))
+        print "test", test
+        test[0][0] = 1
+        print "test", test
+        print "test", test[0]
+        
+        input()        
+'''
     if 'numpy' in sys.modules:
         ret = numpy.zeros(shape)
     else:
-        ret = 0
-        for n_for_dim in reversed(shape):
-            ret = [ret]*n_for_dim
+        ret = [0]*shape[-1]
+        for n_for_dim in reversed(shape[:-1]):
+            tret = []
+            for i in range(n_for_dim):
+                tret.append(ret[:])
+            ret= tret
+            
     return ret
+
+
+
+
 
 
 def multinomial(n_add, param, n_dim = 1):
@@ -85,10 +102,11 @@ The vocabulary of the document is all the term_id whose word count is not null
     
     def wordtoterm(self):
         self._wordtoterm = self._wordtoterm or flatten([[ term_id for i in range(self.data[term_id]) ]for term_id in self.data ])
-        return self._wordtoterm 
+        return self._wordtoterm
+
     
     
-class SparseDocCollection(object):
+class SparseDocCollection():
     '''
 A class to read collection of documents in a bag of word sparse format:
 docword.filename :
@@ -104,12 +122,35 @@ list of words
 directory : director of files
 '''
         pass
+
+    def __getattr__(self, *args):
+        return self.documents.__getattribute__(*args)
+
+    def write(self, commonfilename, directory="."):
+
+        print self.documents[1231-1][8139]
+        input()
+        print len(directory),  len(commonfilename)
+        docfile = file(directory+"/docword." + commonfilename, "w")
+        for doc_id, doc in enumerate(self.documents):
+            #print "doc_id", doc_id
+            for term_id in doc.vocabulary():
+                #print "word_id", word_id
+                msg = str(doc_id) + "   " + str(term_id) + "  " + str(doc[term_id]) + "\n"
+                #print msg
+                docfile.write(msg)
+        docfile.close()
+        vocfile = file(directory+"/vocab." + commonfilename,"w")
+        for term_id, term in enumerate(self.vocabulary):
+            #print "term_id", term_id
+            vocfile.write( str(term_id) +"   " + str(term) )
+        vocfile.close()
         
-    def read(self, directory, commonfilename):
+        
+    def read(self, commonfilename, directory="."):
         '''
 name : common part of the name e.g. xxx for docword.xxx and vocab.xxx
 '''
-        
         self.vocabulary = file(directory+"/vocab." + commonfilename).readlines()
         docfile = file(directory+"/docword." + commonfilename)
         self.M=int(docfile.readline())
@@ -118,17 +159,27 @@ name : common part of the name e.g. xxx for docword.xxx and vocab.xxx
         
         last = -1
         self.documents = list()
+        maxterm_id = -1
+        minterm_id = +9999999
         for line in docfile.readlines():
-            doc_id, word_id, doc_word_count = map(lambda st: int(st), line.split(' '))
+            doc_id, term_id, doc_word_count = map(lambda st: int(st), line.split(' '))
+            term_id = term_id -1
             if len(self.documents) < doc_id:
                 doc = BagOfWordDoc()
                 self.documents.append(doc)
             doc = self.documents[-1]
+            if maxterm_id < term_id:
+                maxterm_id = term_id
+            if term_id < minterm_id:
+                minterm_id = term_id
             if last != doc_id and doc_id - round(doc_id /1000, 0) *1000 == 0:
                 print str((doc_id *100) / self.M) + "%"
                 last = doc_id
             #print doc.keys()
-            doc[word_id] +=1
+            doc[term_id] = doc_word_count
+        print "maxterm_id", maxterm_id
+        print "minterm_id", minterm_id
+
             
 def indice(a):
     for i,val in enumerate(a):
@@ -170,7 +221,7 @@ def main(argv=None):
         argv = sys.argv
     try:
         try:
-            opts, args = getopt.getopt(argv[1:], "ht", ["help"])
+            opts, args = getopt.getopt(argv[1:], "htw", ["help"])
         except getopt.error, msg:
             raise Usage(msg)
         
@@ -180,47 +231,62 @@ def main(argv=None):
             if o in ("-t", "--test"):
                 print >>sys.stdout, 'TEST MODE'
                 test = True
+            if o in ("-w", "--write test"):
+                print >>sys.stdout, 'TEST MODE'
+                test = True
         if len(args)<0 :
             raise Usage("arguments missing")
+
+        #prior among topic in docs
         alpha = 0.5
+        #prior among topic in words
         beta = 0.5
         ntopics = 10
-        niters = 5
+        niters = 1000
         
-        
-        savestep = 100000
+        savestep = 50
         tsavemostlikelywords = 20
- 
-        docs = SparseDocCollection()
-        docs.read('../trainingdocs', 'enron.dev.txt')
+
+        test = False
+        if test:
+            alphai = alpha / 500
+            betai  = beta / 25
+            docs = SparseDocCollection()
+            docs.read('enron.dev.txt','../trainingdocs')
+            docs.write('toto.txt')
+            return   
+        else:
+            docs = SparseDocCollection()
+            docs.read('enron.dev.txt','../trainingdocs')
 
         ntopic_by_doc_topic = zeros((len(docs.documents), ntopics ))
         ntopic_by_doc = zeros((len(docs.documents), ))
         nterm_by_topic_term = zeros((ntopics, len(docs.vocabulary)))
         nterm_by_topic = zeros((ntopics, ))
         z_doc_term = zeros (  (len(docs.documents), len(docs.vocabulary)) )
+
+        print "# of documents : ", len(docs.documents)
+        print "# of terms  : ", len(docs.vocabulary)
+        print "# of words  : ", sum(map(lambda doc:doc.wordcount(), docs))
+        print "# of topics:  ", ntopics
         
         nulltopiccount= [0]*ntopics
-          
-  
         model_init = [1. / ntopics for x in range(ntopics)]
-        #multinomial = numpy.random.multinomial
- 
-        def add(doc_id, term_id, qtty=1):
+        alphai = alpha / len(docs.documents)
+        betai  = beta / len(docs.vocabulary)
+        
+        def add(doc_id, term_id, qtty=1.):
             ntopic_by_doc_topic[doc_id][z_doc_term[doc_id][term_id]] += qtty
-            ntopic_by_doc [doc_id] += qtty
+            ntopic_by_doc [doc_id] += qtty             
             nterm_by_topic_term[z_doc_term[doc_id][term_id]][term_id] += qtty
             nterm_by_topic [z_doc_term[doc_id][term_id]] += qtty
+            
         def remove(doc_id, word_id):
-            add(doc_id, word_id, -1)
+            add(doc_id, word_id, -1.)
  
         def sampleparam(nterm_by_topic_forthisword, nterm_by_topic, ntopic_by_doc_topic_forthisdoc, ntopic_by_doc):
-            #print "nterm_by_topic_forthisword", nterm_by_topic_forthisword
-            #print "nterm_by_topic",nterm_by_topic
-            #print "ntopic_by_doc_topic_forthisdoc",ntopic_by_doc_topic_forthisdoc
-            #print "ntopic_by_doc",ntopic_by_doc
-            param = [(nterm_by_topic_forthisword[topic] + beta) / (nterm_by_topic[topic] + beta) * \
-                    (ntopic_by_doc_topic_forthisdoc[topic] + alpha) / (ntopic_by_doc[doc_id] + alpha) for topic in range(ntopics)]
+            param = [(nterm_by_topic_forthisword[topic] + betai) / (nterm_by_topic[topic] + beta) * \
+                    (ntopic_by_doc_topic_forthisdoc[topic] + alphai) / (ntopic_by_doc[doc_id] + ntopics * alpha) for topic in range(ntopics)]
             s = sum(param)
             param = [param[i] / s for i in range(ntopics)]
             if param == nulltopiccount:
@@ -234,29 +300,41 @@ def main(argv=None):
                     ndocs_topics[topic] += ntopic_by_doc_topic[doc_id][topic]
             print "Most topic among docs :",   sum(ndocs_topics) 
                  
-        def saveit():
-            totalfreq = [0]*len(docs.vocabulary)
-            for doc_id, doc in enumerate(docs.documents):
-                words = doc.wordtoterm()
-                for term_id in doc.vocabulary():
-                    totalfreq[term_id] += doc[term_id]
-            print "Most frequent words among docs :",  map(lambda i:docs.vocabulary[i],indicenbiggest(totalfreq, tsavemostlikelywords))
+        def saveit(mfw=False, wordspertopic=False, docspertopic=False):
 
-            for topic in range(ntopics):
-                index = indicenbiggest(nterm_by_topic_term[topic][:], tsavemostlikelywords)
-                print "MF word for topic", topic, map(lambda i:docs.vocabulary[i],index)
+            if mfw:
+                totalfreq = [0]*len(docs.vocabulary)
+                for doc_id, doc in enumerate(docs.documents):
+                    words = doc.wordtoterm()
+                    for term_id in doc.vocabulary():
+                        totalfreq[term_id] += doc[term_id]
+                print "Most frequent words among docs :",  map(lambda i:docs.vocabulary[i],indicenbiggest(totalfreq, tsavemostlikelywords))
 
-            ndocs_topics = [0]*ntopics            
-            for doc_id, doc in enumerate(docs.documents):
+            if wordspertopic:
                 for topic in range(ntopics):
-                    ndocs_topics[topic] += ntopic_by_doc_topic[doc_id][topic]
-            print "Most topic among docs :",   ndocs_topics
+                    index = indicenbiggest(nterm_by_topic_term[topic][:], tsavemostlikelywords)
+                    print "MF word for topic", topic, map(lambda i:docs.vocabulary[i],index)
+            if docspertopic:
+                ndocs_topics = [0]*ntopics            
+                for doc_id, doc in enumerate(docs.documents):
+                    for topic in range(ntopics):
+                        #if ntopic_by_doc_topic[doc_id][topic] > 0:
+                        #    print "doc_id, topic, ntopic_by_doc_topic[doc_id][topic]", doc_id, topic, ntopic_by_doc_topic[doc_id][topic]
+                        ndocs_topics[topic] += ntopic_by_doc_topic[doc_id][topic]
+                print "Docs per topics :",  "(total)", sum( ndocs_topics), ndocs_topics
 
                   
         param = 0
         for iter in range(niters):
+            if iter == 0:
+                print "initial seed"
+            else:
+                print "iteration #", iter
+                if iter - (iter/savestep)*savestep == 0:
+                    saveit(False, True , False)
+                
             for doc_id, doc in enumerate(docs.documents):
-                #print doc_id 
+                #print "doc_id", doc_id 
                 
                 words = doc.wordtoterm()
                 wordcount = doc.wordcount()
@@ -275,44 +353,25 @@ def main(argv=None):
                         #print "term_id",term_id
                         #print "topic", topics_for_words[i_word], indice(topics_for_words[i_word])
                         #print z_doc_term[doc_id][term_id]
-                        z_doc_term[doc_id,term_id] = indice(topic_for_words[i_word])
-                        if i_word == 0 and doc_id ==0:
-                            print  z_doc_term[doc_id,term_id]
-                        #print "ok"
+                        z_doc_term[doc_id][term_id] = indice(topic_for_words[i_word])
                         add(doc_id, term_id)
+                        
                 else:                    
                     for i_word, term_id in enumerate(words):
                         remove(doc_id, term_id)
-                        #print "zip(*nterm_by_topic_term)[term_id]", type(zip(*nterm_by_topic_term)[term_id]), len(zip(*nterm_by_topic_term)[term_id])
-                        #print "nterm_by_topic", type(nterm_by_topic), len(nterm_by_topic)
-                        #print "zip(*ntopic_by_doc_topic)[doc_id]", type(zip(*ntopic_by_doc_topic)[doc_id]), len(zip(*ntopic_by_doc_topic)[doc_id])
-                        #print "ntopic_by_doc", type(ntopic_by_doc), len(ntopic_by_doc)
-                        #input()
-                        #param = sampleparam(zip(*nterm_by_topic_term)[term_id], nterm_by_topic, ntopic_by_doc_topic[doc_id], ntopic_by_doc)
-                        param = sampleparam(nterm_by_topic_term[:,term_id], nterm_by_topic, ntopic_by_doc_topic[doc_id], ntopic_by_doc)
-                        #if sum(nterm_by_topic_term[:,term_id]) == 0:
-                        #    pass
-                        #if doc_id - (doc_id / 100)*100== 0 :
-                        #    if i_word - (i_word / 100)*100== 0 :
-                        #        print param
+                        local_nterm_by_topic_term = [nterm_by_topic_term[x][term_id]  for x in range(ntopics)]
+                        param = sampleparam(local_nterm_by_topic_term, nterm_by_topic, ntopic_by_doc_topic[doc_id], ntopic_by_doc)
                         new_topic = multinomial(1, param)
-                        #print doc_id 
-                        #input()
-                        #if i_word == 0 and doc_id ==0:
-                        #    print  z_doc_term[doc_id,term_id]
-                        #    input()
-                        #print  z_doc_term[doc_id,term_id],param,new_topic, indice(new_topic)
                         z_doc_term[doc_id][term_id] = indice(new_topic)
                         add(doc_id, term_id)
-                    if doc_id - (doc_id / 100)*100== 0:
+                    if doc_id - (doc_id / 500)*500== 0:
                         #saveit()
                         print "iter", iter, " doc : ", doc_id ,"/" , len(docs.documents)
 
-                        
-            print iter
+
             #if iter - (iter/savestep)*savestep == 0:
             # saveit()
-        saveit()
+        saveit(True, True, True)
         print param
         
         print "fini"
