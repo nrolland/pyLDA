@@ -145,7 +145,7 @@ list of words
             #print "doc_id", doc_id
             for term_id in doc.vocabulary():
                 #print "word_id", word_id
-                msg = str(doc_id) + "   " + str(term_id) + "  " + str(doc[term_id]) + "\n"
+                msg = str(doc_id + 1) + "   " + str(term_id + 1) + "  " + str(doc[term_id]) + "\n"
                 #print msg
                 docfile.write(msg)
         docfile.close()
@@ -173,7 +173,9 @@ name : common part of the name e.g. xxx for docword.xxx and vocab.xxx
             #print line
             doc_id, term_id, doc_word_count = map(lambda st: int(st), line.split(' '))
             term_id = term_id -1
-            if len(self) < doc_id:
+            doc_id = doc_id -1
+            
+            if len(self) < doc_id + 1:
                 doc = BagOfWordDoc()
                 self.append(doc)
             doc = self[-1]
@@ -197,7 +199,7 @@ class LDAModel():
         self.alpha = 0.5
         #prior among topic in words
         self.beta = 0.5
-        self.ntopics = 10
+        self.ntopics = 5
         self.niters = 1000
         
         self.savestep = 50
@@ -205,8 +207,8 @@ class LDAModel():
         self.docs = SparseDocCollection()
 
         
-    def load(self):
-        self.docs.read('test.txt','../trainingdocs')
+    def load(self, nameset):
+        self.docs.read(nameset,'../trainingdocs')
         self.ntopic_by_doc_topic = zeros((len(self.docs), self.ntopics))
         self.ntopic_by_doc       = zeros((len(self.docs), ))
         self.nterm_by_topic_term = zeros((self.ntopics, len(self.docs.vocabulary)))
@@ -278,7 +280,7 @@ class LDAModel():
         for doc_id, doc in enumerate(self.docs):
             i_word =0 
             #print doc_id
-            for  term_id in doc:
+            for term_id in doc:
                 for i_term_occ in xrange(doc[term_id]):
                     self.remove(doc_id, term_id, self.z_doc_word[doc_id][i_word])
                     param = [(self.nterm_by_topic_term[topic][term_id] + self.betai) / ( self.nterm_by_topic[topic] + self.beta) * \
@@ -294,14 +296,15 @@ class LDAModel():
                     i_word += 1
             if doc_id - (doc_id / 500)*500== 0:
                 #saveit()
-                print "iter", iter, " doc : ", doc_id ,"/" , len(self.docs)
+                print " doc : ", doc_id ,"/" , len(self.docs)
 
     def run(self,niters,savestep):
         old_lik = -999999999999
-
-
+        
+        self.initialize()
         for iter in range(niters):
             print "iteration #", iter
+            self.iterate()
             if iter - (iter/savestep)*savestep == 0:
                 self.saveit(False, True , False)
             
@@ -336,9 +339,10 @@ def main(argv=None):
 
         model = LDAModel()
         
-        model.load()
+        model.load('enron.dev.small.txt')
+        model.saveit(True, False, False)
         model.info()
-        model.run(0, 3)
+        model.run(100, 5)
         model.saveit(True, True, True)
         
         print "fin"
