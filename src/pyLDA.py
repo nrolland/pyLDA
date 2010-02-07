@@ -20,29 +20,30 @@ def indice(a):
                 break
     return i
  
-def indicenbiggest2(i,val, acc, acc_index):
-    ret = acc_index
-    if val > acc[0]:
-        acc[0] = val
-        acc_index[0] = i
+def indicenbiggest2(i,val, n_biggest, n_biggest_index):
+    ret = n_biggest_index
+    if val > n_biggest[0]:
+        n_biggest[0] = val
+        n_biggest_index[0] = i
     else:
-        if len(acc)>1:
-            sub = acc[1:]
-            sub_index = acc_index[1:]
+        if len(n_biggest)>1:
+            sub = n_biggest[1:]
+            sub_index = n_biggest_index[1:]
             subret = indicenbiggest2(i,val, sub,sub_index)
-            acc_index[1:] = sub_index[:]
-            acc[1:] = sub[:]
+            n_biggest_index[1:] = subret[:]
+            n_biggest[1:] = sub[:]
     
     return ret
  
 def indicenbiggest(ar,n):
-    acc = [float('-Infinity') for i in range(min(abs(n),len(ar)))]
-    acc_index = [ 0 for i in range(min(abs(n),len(ar)))]
+    ln = min(abs(n),len(ar))
+    n_biggest = [float('-Infinity')] *ln
+    n_biggest_index = [0] *ln
     
     for i, val in enumerate(ar):
-        indicenbiggest2(i,val, acc, acc_index)
+        indicenbiggest2(i,val, n_biggest, n_biggest_index)
  
-    return acc_index
+    return n_biggest_index
  
  
 def flatten(x):
@@ -169,6 +170,7 @@ name : common part of the name e.g. xxx for docword.xxx and vocab.xxx
         maxterm_id = -1
         minterm_id = +999999999
         for line in docfile.readlines():
+            #print line
             doc_id, term_id, doc_word_count = map(lambda st: int(st), line.split(' '))
             term_id = term_id -1
             if len(self) < doc_id:
@@ -204,7 +206,7 @@ class LDAModel():
 
         
     def load(self):
-        self.docs.read('enron.dev.txt','../trainingdocs')
+        self.docs.read('test.txt','../trainingdocs')
         self.ntopic_by_doc_topic = zeros((len(self.docs), self.ntopics))
         self.ntopic_by_doc       = zeros((len(self.docs), ))
         self.nterm_by_topic_term = zeros((self.ntopics, len(self.docs.vocabulary)))
