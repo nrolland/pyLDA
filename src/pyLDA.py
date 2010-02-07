@@ -78,6 +78,16 @@ def zeros(shape):
             
     return ret
 
+def oneinrow(ar, row_id):
+    tar = ar[:]
+    tar[row_id] = numpy.ones(len(ar[row_id]))
+    return tar
+
+def oneincol(ar, col_id):
+    tar = ar[:]
+    tar[:,col_id] = numpy.ones(len(ar[:,col_id]))
+    return tar
+
 def multinomial(n_add, param, n_dim = 1):
     #s = sum(param)
     if np:
@@ -141,20 +151,54 @@ list of words
                 
     def write(self, commonfilename, directory="."):
         docfile = file(directory+"/docword." + commonfilename, "w")
+        docfile.write(str(len(self))  + "\n") #doc number
+        docfile.write(str(len(self.vocabulary)) + "\n")#=int(docfile.readline()) #vocab size
+        docfile.write(str(9999) + "\n")#=int(docfile.readline()) #wordcount
+
         for doc_id, doc in enumerate(self):
             #print "doc_id", doc_id
             for term_id in doc.vocabulary():
                 #print "word_id", word_id
-                msg = str(doc_id + 1) + "   " + str(term_id + 1) + "  " + str(doc[term_id]) + "\n"
+                msg = str(doc_id + 1) + " " + str(term_id + 1) + " " + str(doc[term_id]) + "\n"
                 #print msg
                 docfile.write(msg)
         docfile.close()
         vocfile = file(directory+"/vocab." + commonfilename,"w")
-        for term_id, term in enumerate(self.vocabulary):
+        for term in enumerate(self.vocabulary):
             #print "term_id", term_id
-            vocfile.write( str(term_id) +"   " + str(term) )
+            vocfile.write(str(term)  + "\n")
         vocfile.close()
         
+    def loadtest(self):#require numpy
+        topics = numpy.matrix(zeros((6,25)))
+        topics[0] = oneinrow(zeros((5,5)), 0).flatten() /5
+        topics[1] = oneinrow(zeros((5,5)), 2).flatten()/5
+        topics[2] = oneinrow(zeros((5,5)), 4).flatten()/5
+        topics[3] = oneincol(zeros((5,5)), 0).flatten()/5
+        topics[4] = oneincol(zeros((5,5)), 2).flatten()/5
+        topics[5] = oneincol(zeros((5,5)), 3).flatten()/5
+        
+        alpha = [1./len(topics)]* len(topics)
+        for doc_id in range(100):
+            topicsproportions = numpy.random.dirichlet(alpha)
+            #print type(topicsproportions),topicsproportions.transpose().shape
+            #print type(topics),topics.shape
+            distrib =  topicsproportions * topics
+            #print distrib.sum() == 1
+
+            doc = BagOfWordDoc()
+            words = multinomial(50, distrib.tolist()[0], 1)
+            for word_id, wordcount in enumerate(words): 
+                if wordcount > 0:
+                    doc[word_id] = wordcount
+            self.append(doc)
+            
+        vocab = dict()
+        for term_id in range(25):
+             vocab[term_id] = term_id
+        self.vocabulary = [i for i in range(25)]
+        
+
         
     def read(self, commonfilename, directory="."):
         '''
@@ -170,7 +214,7 @@ name : common part of the name e.g. xxx for docword.xxx and vocab.xxx
         maxterm_id = -1
         minterm_id = +999999999
         for line in docfile.readlines():
-            #print line
+            #print line, line.split(' ')
             doc_id, term_id, doc_word_count = map(lambda st: int(st), line.split(' '))
             term_id = term_id -1
             doc_id = doc_id -1
@@ -199,7 +243,7 @@ class LDAModel():
         self.alpha = 0.5
         #prior among topic in words
         self.beta = 0.5
-        self.ntopics = 5
+        self.ntopics = 6
         self.niters = 1000
         
         self.savestep = 50
@@ -207,8 +251,8 @@ class LDAModel():
         self.docs = SparseDocCollection()
 
         
-    def load(self, nameset):
-        self.docs.read(nameset,'../trainingdocs')
+    def load(self, nameset, directory='.'):
+        self.docs.read(nameset,directory)
         self.ntopic_by_doc_topic = zeros((len(self.docs), self.ntopics))
         self.ntopic_by_doc       = zeros((len(self.docs), ))
         self.nterm_by_topic_term = zeros((self.ntopics, len(self.docs.vocabulary)))
@@ -216,7 +260,6 @@ class LDAModel():
         self.z_doc_word          = [ zeros((doc.Nwords(), )) for doc in self.docs]
 
     def test(self):    
-        self.docs = SparseDocCollection()
         self.docs.read('enron.dev.txt','../trainingdocs')
         self.docs.write('toto.txt')
         
@@ -339,10 +382,13 @@ def main(argv=None):
 
         model = LDAModel()
         
-        model.load('enron.dev.small.txt')
+        #model.load('enron.dev.small.txt','../trainingdocs')
+        #model.docs.loadtest()
+        #model.docs.write('test.txt')
+        model.load('test.txt')
         model.saveit(True, False, False)
         model.info()
-        model.run(100, 5)
+        model.run(300, 10)
         model.saveit(True, True, True)
         
         print "fin"
