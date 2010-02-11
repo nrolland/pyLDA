@@ -32,8 +32,7 @@ def indicenbiggest2(i,val, n_biggest, n_biggest_index):
             sub_index = n_biggest_index[1:]
             subret = indicenbiggest2(i,val, sub,sub_index)
             n_biggest_index[1:] = subret[:]
-            n_biggest[1:] = sub[:]
-    
+            n_biggest[1:] = sub[:]    
     return ret
  
 def indicenbiggest(ar,n):
@@ -50,7 +49,6 @@ def indicenbiggest(ar,n):
 def flatten(x):
     result = []
     for el in x:
-        #if isinstance(el, (list, tuple)):
         if hasattr(el, "__iter__") and not isinstance(el, basestring):
             result.extend(flatten(el))
         else:
@@ -59,13 +57,7 @@ def flatten(x):
  
 def zeros(shape):
     '''
-        test  = zeros((2,10))
-        print "test", test
-        test[0][0] = 1
-        print "test", test
-        print "test", test[0]
-        
-        input()        
+shape : a tuple 
 '''
     if np:
         ret = numpy.zeros(shape)
@@ -97,14 +89,20 @@ def logdelta(v):
         sigmagammaln +=  gammaln(x_i)
     return sigmagammaln - gammaln(sigma)
 
-def multinomial(n_add, param, n_dim = 1):
-    #s = sum(param)
+def multinomial(n_add, param, n_dim = 1, normalize = True):
+'''
+n_add : number of samples to be added for each draw
+param : param of multinomial law
+n_dim : number of samples
+'''
     if np:
-        if n_dim == 1:
-            res = numpy.random.multinomial(n_add, param)
-        else:
-            res = numpy.random.multinomial(n_add, param, n_dim)            
+        if normalize:
+            param /= numpy.sum(param)
+        res = numpy.random.multinomial(n_add, param, n_dim)            
     else:
+        if normalize:
+            s = sum(param)
+            param = [param[i] / s for i in range(self.ntopics)]
         res = []
         cdf = [sum(param[:1+end]) for end in range(len(param))]
         zerosample = [0]*len(param)
@@ -117,8 +115,8 @@ def multinomial(n_add, param, n_dim = 1):
                 sample[i_cdf] += 1
             res.append(sample)
     
-        if n_dim == 1:
-            res = flatten(res)
+    if n_dim == 1:
+        res = res[0]
     return res
 
  
@@ -146,13 +144,16 @@ The vocabulary of the document is all the term_id whose word count is not null
         
 class SparseDocCollection(list):
     '''
-A class to read collection of documents in a bag of word sparse format:
-docword.filename :
+A class to read collection of documents in a bag of word sparse format.
+The format reads like
+
+in docword.filename :
 M number of docs
 V numbers of words in vocabulary
 L numbers of (documents, words) occurence that follows
 doc_id word_id doc_word_count
-vocab.filename:
+
+in vocab.filename:
 list of words
 '''
     def __init__(self):
@@ -165,22 +166,18 @@ list of words
         docfile.write(str(9999) + "\n")#=int(docfile.readline()) #wordcount
 
         for doc_id, doc in enumerate(self):
-            #print "doc_id", doc_id
             for term_id in doc.vocabulary():
-                #print "word_id", word_id
                 msg = str(doc_id + 1) + " " + str(term_id + 1) + " " + str(doc[term_id]) + "\n"
-                #print msg
                 docfile.write(msg)
-        docfile.close()
+        docfile.close()        
         vocfile = file(directory+"/vocab." + commonfilename,"w")
         for term in enumerate(self.vocabulary):
-            #print "term_id", term_id
             vocfile.write(str(term)  + "\n")
         vocfile.close()
         
-    def loadtest(self):#require numpy
+    def loadtest(self):
         topics = numpy.matrix(zeros((6,25)))
-        topics[0] = oneinrow(zeros((5,5)), 0).flatten() /5
+        topics[0] = oneinrow(zeros((5,5)), 0).flatten()/5
         topics[1] = oneinrow(zeros((5,5)), 2).flatten()/5
         topics[2] = oneinrow(zeros((5,5)), 4).flatten()/5
         topics[3] = oneincol(zeros((5,5)), 0).flatten()/5
@@ -190,11 +187,8 @@ list of words
         alpha = [1./len(topics)]* len(topics)
         for doc_id in range(100):
             topicsproportions = numpy.random.dirichlet(alpha)
-            #print type(topicsproportions),topicsproportions.transpose().shape
-            #print type(topics),topics.shape
             distrib =  topicsproportions * topics
-            #print distrib.sum() == 1
-
+ 
             doc = BagOfWordDoc()
             words = multinomial(50, distrib.tolist()[0], 1)
             for word_id, wordcount in enumerate(words): 
@@ -209,10 +203,7 @@ list of words
         
 
         
-    def read(self, commonfilename, directory="."):
-        '''
-name : common part of the name e.g. xxx for docword.xxx and vocab.xxx
-'''
+    def read(self, commonfilename, directory=".", verbose = False):
         self.vocabulary = file(directory+"/vocab." + commonfilename).readlines()
         docfile = file(directory+"/docword." + commonfilename)
         self.M=int(docfile.readline()) #doc number
@@ -232,18 +223,15 @@ name : common part of the name e.g. xxx for docword.xxx and vocab.xxx
                 doc = BagOfWordDoc()
                 self.append(doc)
             doc = self[-1]
-            if maxterm_id < term_id:
-                maxterm_id = term_id
-            if term_id < minterm_id:
-                minterm_id = term_id
-            if last != doc_id and doc_id - round(doc_id /1000, 0) *1000 == 0:
+            doc[term_id] = doc_word_count
+            
+            maxterm_id = max(maxterm_id, term_id)
+            minterm_id = min(minterm_id, term_id)
+            if verbose and (last != doc_id and doc_id - round(doc_id /1000, 0) *1000 == 0):
                 print str((doc_id *100) / self.M) + "%"
                 last = doc_id
-            doc[term_id] = doc_word_count
-        #print "maxterm_id", maxterm_id
-        #print "minterm_id", minterm_id
         if maxterm_id - minterm_id + 1 != self.V:
-            print "warning"
+            print "warning : vocab size != vocab used"
 
  
 class LDAModel():
@@ -268,9 +256,6 @@ class LDAModel():
         self.nterm_by_topic      = zeros((self.ntopics, ))
         self.z_doc_word          = [ zeros((doc.Nwords(), )) for doc in self.docs]
 
-    def test(self):    
-        self.docs.read('enron.dev.txt','../trainingdocs')
-        self.docs.write('toto.txt')
         
     def add(self,doc_id, term_id, topic, qtty=1.):
         self.ntopic_by_doc_topic[doc_id][topic] += qtty
@@ -327,8 +312,6 @@ class LDAModel():
     def initialize(self):
         self.alpha = [self.falpha / self.ntopics] * self.ntopics
         self.beta  = [self.fbeta / len(self.docs.vocabulary)] *len(self.docs.vocabulary)
-
-        
         
         model_init = [1. / self.ntopics] * self.ntopics
         print "initial seed"
@@ -351,14 +334,10 @@ class LDAModel():
                     self.remove(doc_id, term_id, self.z_doc_word[doc_id][i_word])
                     param = [(self.nterm_by_topic_term[topic][term_id] + self.beta[term_id]) / ( self.nterm_by_topic[topic] + self.fbeta) * \
                             ( self.ntopic_by_doc_topic[doc_id][topic] +  self.alpha[topic]) / ( self.ntopic_by_doc[doc_id] + self.falpha) for topic in range(self.ntopics)]
-                    if np: 
-                        param /= numpy.sum(param)
-                    else:
-                        s = sum(param)
-                        param = [param[i] / s for i in range(self.ntopics)]
-                    new_topic = multinomial(1, param)
-                    self.z_doc_word[doc_id][i_word] = indice(new_topic)
-                    self.add(doc_id, term_id, self.z_doc_word[doc_id][i_word])
+
+                    new_topic = indice(multinomial(1, param))
+                    self.z_doc_word[doc_id][i_word] = new_topic
+                    self.add(doc_id, term_id, new_topic)
                     i_word += 1
             if doc_id - (doc_id / 500)*500== 0:
                 #saveit()
