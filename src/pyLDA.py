@@ -97,8 +97,6 @@ def logdelta(v):
         sigmagammaln +=  gammaln(x_i)
     return sigmagammaln - gammaln(sigma)
 
-
-
 def multinomial(n_add, param, n_dim = 1):
     #s = sum(param)
     if np:
@@ -314,8 +312,6 @@ class LDAModel():
         print "# of words  : ", sum(map(lambda doc:doc.Nwords(), self.docs))
         print "# of topics:  ", self.ntopics
 
-
- 
     def loglikelihood(self):
         loglike = 0
         for k in xrange(self.ntopics):
