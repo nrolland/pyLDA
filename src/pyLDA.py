@@ -25,21 +25,11 @@ def indice(a):
             if val > 0:
                 break
     return i
- 
-def indicenbiggest2(i,val, n_biggest, n_biggest_index):
-    ret = n_biggest_index
-    if val > n_biggest[0]:
-        n_biggest[0] = val
-        n_biggest_index[0] = i
-    else:
-        if len(n_biggest)>1:
-            sub = n_biggest[1:]
-            sub_index = n_biggest_index[1:]
-            subret = indicenbiggest2(i,val, sub,sub_index)
-            n_biggest_index[1:] = subret[:]
-            n_biggest[1:] = sub[:]
-    
-    return ret
+
+def righshift(ar, pos = 0):
+    ar[pos + 1:] = ar[pos:-1]
+    ar[pos] = float('-Infinity')
+    return ar
  
 def indicenbiggest(ar,n):
     ln = min(abs(n),len(ar))
@@ -47,9 +37,19 @@ def indicenbiggest(ar,n):
     n_biggest_index = [0] *ln
     
     for i, val in enumerate(ar):
-        indicenbiggest2(i,val, n_biggest, n_biggest_index)
+        for i_biggest in xrange(n):
+            if val > n_biggest[i_biggest]:
+                n_biggest = righshift(n_biggest, i_biggest)
+                n_biggest[i_biggest] = val
+                n_biggest_index = righshift(n_biggest_index, i_biggest)
+                n_biggest_index[i_biggest] = i
+                break
  
     return n_biggest_index
+
+def testindicebiggest():
+    ar = [54.0, 50.0, 53.0, 47.0, 50.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+    print indicenbiggest(ar,20)
  
  
 def flatten(x):
@@ -62,11 +62,11 @@ def flatten(x):
             result.append(el)
     return result
  
-def zeros(shape):
+def mat(shape, val=0):
     if np:
         ret = numpy.zeros(shape)
     else:
-        ret = [0]*shape[-1]
+        ret = [val]*shape[-1]
         for n_for_dim in reversed(shape[:-1]):
             tret = []
             for i in range(n_for_dim):
@@ -74,6 +74,19 @@ def zeros(shape):
             ret= tret
             
     return ret
+
+def zeros(shape):
+    return mat(shape, 0)
+
+def ones(shape):
+    return mat(shape, 1)
+
+def roundmat(mat):
+    ret = zeros((len(mat), len(mat[0])))
+    for i in range(len(mat)):
+        for j in range(len(mat[0])):
+            ret[i][j] = round(255 * mat[i][j])
+    return ret    
 
 def oneinrow(ar, row_id):
     tar = ar[:]
@@ -271,7 +284,7 @@ class LDAModel():
         self.niters = 1000
         
         self.savestep = 50
-        self.tsavemostlikelywords = 20
+        self.tsavemostlikelywords = 5
         self.docs = SparseDocCollection()
 
         
@@ -305,8 +318,9 @@ class LDAModel():
 
 
     def phi_theta(self):
-        p = self.beta*numpy.ones((self.ntopics,len(self.docs.vocabulary))) 
-        th = self.alpha*numpy.ones((len(self.docs),self.ntopics))
+        p = ones((self.ntopics,len(self.docs.vocabulary))) 
+        th = ones((len(self.docs),self.ntopics))
+        tht = zip(*th)
                 
         for topic in range(self.ntopics):
             p[topic,:] = normalize(map(operator.add, self.nterm_by_topic_term[topic], self.beta))
@@ -371,8 +385,6 @@ class LDAModel():
         self.alpha = [self.falpha / self.ntopics] * self.ntopics
         self.beta  = [self.fbeta / len(self.docs.vocabulary)] *len(self.docs.vocabulary)
 
-        
-        
         model_init = [1. / self.ntopics] * self.ntopics
         print "initial seed"
         for doc_id, doc in enumerate(self.docs):
@@ -392,7 +404,7 @@ class LDAModel():
                 for i_term_occ in xrange(doc[term_id]):
                     self.remove(doc_id, term_id, self.z_doc_word[doc_id][i_word])
                     param = [(self.nterm_by_topic_term[topic][term_id] + self.beta[term_id]) / ( self.nterm_by_topic[topic] + self.fbeta) * \
-                            ( self.ntopic_by_doc_topic[doc_id][topic] +  self.alpha[topic]) / ( self.ntopic_by_doc[doc_id] + self.falpha) for topic in range(self.ntopics)]
+                             (self.ntopic_by_doc_topic[doc_id][topic] +  self.alpha[topic] ) / ( self.ntopic_by_doc[doc_id] + self.falpha) for topic in range(self.ntopics)]
                     new_topic = indice(multinomial(1, param))
                     self.z_doc_word[doc_id][i_word] = new_topic
                     self.add(doc_id, term_id, new_topic)
@@ -400,7 +412,7 @@ class LDAModel():
             if verbose and ismultiple(doc_id, 500):
                 print " doc : ", doc_id ,"/" , len(self.docs)
 
-    def run(self,niters,savestep, burnin = 50):
+    def run(self,niters,savestep, burnin = 100):
         old_lik = -999999999999
         
         self.initialize()
@@ -410,15 +422,11 @@ class LDAModel():
             if i_iter - (i_iter/savestep)*savestep == 0:
                 #self.topics2images(str(i_iter))
                 print "Likelihood :", self.loglikelihood(), "iteration #", i_iter
-            if (new_lik - old_lik)/old_lik < 5.0/100 and i_iter > burnin:
+            if (new_lik - old_lik)/old_lik < 1.0/100 and i_iter > burnin:
                 print "converged", "iter #:", i_iter
-                self.saveit(False, True , False)
                 return
             
         
-        
-
-
 class Usage(Exception):
     def __init__(self, msg):
         self.msg = msg
@@ -452,7 +460,7 @@ def main(argv=None):
         model.load('test.txt')
         model.saveit(True, False, False)
         model.info()
-        model.run(1000, 5)
+        model.run(300, 5)
         model.saveit(True, True, True)
         
         print "fin"
