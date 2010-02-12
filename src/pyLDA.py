@@ -7,6 +7,7 @@ From Gregor Heinrich's most excellent text 'Parameter estimation for text analys
 import sys, getopt
 import collections, math, array,numpy
 from scipy.special import gamma, gammaln
+import Image
 
 import random, operator
 
@@ -309,7 +310,7 @@ class LDAModel():
                 
         for topic in range(self.ntopics):
             p[topic,:] = normalize(map(operator.add, self.nterm_by_topic_term[topic], self.beta))
-            th[:,topic] = normalize(map(operator.add, self.ntopic_by_doc_topic[topic], self.alpha))
+            th[:,topic] = normalize(map(lambda x: x + self.alpha[topic], self.ntopic_by_doc_topic[:,topic]))
             
         return p,th
         
@@ -332,11 +333,21 @@ class LDAModel():
                     ndocs_topics[topic] += self.ntopic_by_doc_topic[doc_id][topic]
             print "Docs per topics :",  "(total)", sum( ndocs_topics), ndocs_topics
             
-    def topics2images(self):
-        import Image
+    def topics2images(self, name=""):
+        
+        topics = Image.new("L", ((5+2)*6, 5+10),255)
+
+        phi, theta = self.phi_theta()
+
         for topic in range(self.ntopics):
-            pixels = numpy.ones((5,5), numpy.uint8)
-            
+            pixels = numpy.zeros((5,5), numpy.uint8)
+            for i in range(5):
+                pixels[i,:] = 255*phi[topic,i*5:(i+1)*5 ]
+            #print pixels
+            pixels = (1 - pixels) * 255.
+            img = Image.fromarray(pixels,"L")
+            topics.paste(img, ((5+2)*topic, 5))
+        topics.save("topics" + name + ".png")
             
     def info(self):
         print "# of documents : ", len(self.docs)
@@ -389,7 +400,7 @@ class LDAModel():
             if verbose and ismultiple(doc_id, 500):
                 print " doc : ", doc_id ,"/" , len(self.docs)
 
-    def run(self,niters,savestep, burnin = 100):
+    def run(self,niters,savestep, burnin = 50):
         old_lik = -999999999999
         
         self.initialize()
@@ -397,6 +408,7 @@ class LDAModel():
             self.iterate()
             new_lik = self.loglikelihood()
             if i_iter - (i_iter/savestep)*savestep == 0:
+                #self.topics2images(str(i_iter))
                 print "Likelihood :", self.loglikelihood(), "iteration #", i_iter
             if (new_lik - old_lik)/old_lik < 5.0/100 and i_iter > burnin:
                 print "converged", "iter #:", i_iter
@@ -440,7 +452,7 @@ def main(argv=None):
         model.load('test.txt')
         model.saveit(True, False, False)
         model.info()
-        model.run(1000, 50)
+        model.run(1000, 5)
         model.saveit(True, True, True)
         
         print "fin"
