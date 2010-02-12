@@ -5,13 +5,17 @@ From Gregor Heinrich's most excellent text 'Parameter estimation for text analys
 '''
  
 import sys, getopt
-import collections, array, numpy
-from scipy.special import gamma,gammaln
+import collections, math, array,numpy
+from scipy.special import gamma, gammaln
+
 import random, operator
 
 
 np = 'numpy' in sys.modules
-          
+
+def ismultiple(i, n):
+    return i - (i/n)*n == 0
+        
 def indice(a):
     if np:
         i =numpy.argmax(a)
@@ -32,7 +36,8 @@ def indicenbiggest2(i,val, n_biggest, n_biggest_index):
             sub_index = n_biggest_index[1:]
             subret = indicenbiggest2(i,val, sub,sub_index)
             n_biggest_index[1:] = subret[:]
-            n_biggest[1:] = sub[:]    
+            n_biggest[1:] = sub[:]
+    
     return ret
  
 def indicenbiggest(ar,n):
@@ -49,6 +54,7 @@ def indicenbiggest(ar,n):
 def flatten(x):
     result = []
     for el in x:
+        #if isinstance(el, (list, tuple)):
         if hasattr(el, "__iter__") and not isinstance(el, basestring):
             result.extend(flatten(el))
         else:
@@ -56,9 +62,6 @@ def flatten(x):
     return result
  
 def zeros(shape):
-    '''
-shape : a tuple 
-'''
     if np:
         ret = numpy.zeros(shape)
     else:
@@ -89,20 +92,26 @@ def logdelta(v):
         sigmagammaln +=  gammaln(x_i)
     return sigmagammaln - gammaln(sigma)
 
-def multinomial(n_add, param, n_dim = 1, normalize = True):
-'''
+def normalize(param):
+    if np:
+        param /= numpy.sum(param)
+    else:
+        s = sum(param)
+        param = [param[i] / s for i in range(len(param))]
+    return param
+
+
+def multinomial(n_add, param, n_dim = 1, normalizeit = True):
+    '''
 n_add : number of samples to be added for each draw
 param : param of multinomial law
 n_dim : number of samples
 '''
+    if normalizeit:
+        param = normalize(param)
     if np:
-        if normalize:
-            param /= numpy.sum(param)
-        res = numpy.random.multinomial(n_add, param, n_dim)            
+        res = numpy.random.multinomial(n_add, param, n_dim)           
     else:
-        if normalize:
-            s = sum(param)
-            param = [param[i] / s for i in range(self.ntopics)]
         res = []
         cdf = [sum(param[:1+end]) for end in range(len(param))]
         zerosample = [0]*len(param)
@@ -114,12 +123,24 @@ n_dim : number of samples
                     if r < val_cdf : break
                 sample[i_cdf] += 1
             res.append(sample)
-    
+   
     if n_dim == 1:
         res = res[0]
     return res
 
- 
+def gammaln(xx):
+    cof =[76.18009172947146,  -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5]
+    xx = float(xx)
+    y = xx
+    x = xx
+    tmp = x + 5.5;
+    tmp -= (x + 0.5) * math.log(tmp);
+    ser = 1.000000000190015;
+    for j in xrange(6):
+        y += 1
+        ser += cof[j] / y;
+    return -tmp + math.log(2.5066282746310005 * ser / x)
+        
 class BagOfWordDoc(dict):
     '''
 A document contains for each term_id, the word count f the term in the document
@@ -169,26 +190,29 @@ list of words
             for term_id in doc.vocabulary():
                 msg = str(doc_id + 1) + " " + str(term_id + 1) + " " + str(doc[term_id]) + "\n"
                 docfile.write(msg)
-        docfile.close()        
+        docfile.close()
         vocfile = file(directory+"/vocab." + commonfilename,"w")
         for term in enumerate(self.vocabulary):
             vocfile.write(str(term)  + "\n")
         vocfile.close()
         
-    def loadtest(self):
+    def loadtest(self):#require numpy
         topics = numpy.matrix(zeros((6,25)))
-        topics[0] = oneinrow(zeros((5,5)), 0).flatten()/5
-        topics[1] = oneinrow(zeros((5,5)), 2).flatten()/5
-        topics[2] = oneinrow(zeros((5,5)), 4).flatten()/5
-        topics[3] = oneincol(zeros((5,5)), 0).flatten()/5
-        topics[4] = oneincol(zeros((5,5)), 2).flatten()/5
-        topics[5] = oneincol(zeros((5,5)), 3).flatten()/5
+        topics[0] = oneinrow(zeros((5,5)), 0).flatten()/5 #0, 1, 2 , 3, 4
+        topics[1] = oneinrow(zeros((5,5)), 2).flatten()/5 #10, 11, 12, 13, 14
+        topics[2] = oneinrow(zeros((5,5)), 4).flatten()/5 #15, 16, 17, 18, 19
+        topics[3] = oneincol(zeros((5,5)), 0).flatten()/5 #0, 5, 10, 15, 20
+        topics[4] = oneincol(zeros((5,5)), 2).flatten()/5 #2, 7, 12, 17, 22
+        topics[5] = oneincol(zeros((5,5)), 3).flatten()/5 #3, 8, 13, 18, 23 
         
         alpha = [1./len(topics)]* len(topics)
         for doc_id in range(100):
             topicsproportions = numpy.random.dirichlet(alpha)
+            #print type(topicsproportions),topicsproportions.transpose().shape
+            #print type(topics),topics.shape
             distrib =  topicsproportions * topics
- 
+            #print distrib.sum() == 1
+
             doc = BagOfWordDoc()
             words = multinomial(50, distrib.tolist()[0], 1)
             for word_id, wordcount in enumerate(words): 
@@ -204,6 +228,9 @@ list of words
 
         
     def read(self, commonfilename, directory=".", verbose = False):
+        '''
+name : common part of the name e.g. xxx for docword.xxx and vocab.xxx
+'''
         self.vocabulary = file(directory+"/vocab." + commonfilename).readlines()
         docfile = file(directory+"/docword." + commonfilename)
         self.M=int(docfile.readline()) #doc number
@@ -223,15 +250,14 @@ list of words
                 doc = BagOfWordDoc()
                 self.append(doc)
             doc = self[-1]
-            doc[term_id] = doc_word_count
-            
             maxterm_id = max(maxterm_id, term_id)
             minterm_id = min(minterm_id, term_id)
-            if verbose and (last != doc_id and doc_id - round(doc_id /1000, 0) *1000 == 0):
+            if verbose and last != doc_id and ismultiple(doc_id, 1000):
                 print str((doc_id *100) / self.M) + "%"
                 last = doc_id
+            doc[term_id] = doc_word_count
         if maxterm_id - minterm_id + 1 != self.V:
-            print "warning : vocab size != vocab used"
+            print "warning"
 
  
 class LDAModel():
@@ -256,6 +282,9 @@ class LDAModel():
         self.nterm_by_topic      = zeros((self.ntopics, ))
         self.z_doc_word          = [ zeros((doc.Nwords(), )) for doc in self.docs]
 
+    def test(self):    
+        self.docs.read('enron.dev.txt','../trainingdocs')
+        self.docs.write('toto.txt')
         
     def add(self,doc_id, term_id, topic, qtty=1.):
         self.ntopic_by_doc_topic[doc_id][topic] += qtty
@@ -272,7 +301,18 @@ class LDAModel():
             for topic in xrange(self.ntopics):
                 ndocs_topics[topic] += self.ntopic_by_doc_topic[doc_id][topic]
         print "Most topic among docs :",   sum(ndocs_topics) 
-             
+
+
+    def phi_theta(self):
+        p = self.beta*numpy.ones((self.ntopics,len(self.docs.vocabulary))) 
+        th = self.alpha*numpy.ones((len(self.docs),self.ntopics))
+                
+        for topic in range(self.ntopics):
+            p[topic,:] = normalize(map(operator.add, self.nterm_by_topic_term[topic], self.beta))
+            th[:,topic] = normalize(map(operator.add, self.ntopic_by_doc_topic[topic], self.alpha))
+            
+        return p,th
+        
     def saveit(self, mfw=False, wordspertopic=False, docspertopic=False):
         if mfw:
             totalfreq = [0]*len(self.docs.vocabulary)
@@ -291,6 +331,13 @@ class LDAModel():
                 for topic in range(self.ntopics):
                     ndocs_topics[topic] += self.ntopic_by_doc_topic[doc_id][topic]
             print "Docs per topics :",  "(total)", sum( ndocs_topics), ndocs_topics
+            
+    def topics2images(self):
+        import Image
+        for topic in range(self.ntopics):
+            pixels = numpy.ones((5,5), numpy.uint8)
+            
+            
     def info(self):
         print "# of documents : ", len(self.docs)
         print "# of terms  : ", len(self.docs.vocabulary)
@@ -300,11 +347,11 @@ class LDAModel():
     def loglikelihood(self):
         loglike = 0
         for k in xrange(self.ntopics):
-            loglike += logdelta(self.nterm_by_topic_term[k][:] + self.beta)
+            loglike += logdelta(map(operator.add, self.nterm_by_topic_term[k][:], self.beta))
         loglike -= logdelta(self.beta) * self.ntopics
 
         for m in xrange(len(self.docs)):
-            loglike += logdelta(self.ntopic_by_doc_topic[m][:]+ self.alpha)
+            loglike += logdelta(map(operator.add, self.ntopic_by_doc_topic[m][:], self.alpha))
         loglike -= logdelta(self.alpha) * len(self.docs)
         return loglike
         
@@ -312,6 +359,8 @@ class LDAModel():
     def initialize(self):
         self.alpha = [self.falpha / self.ntopics] * self.ntopics
         self.beta  = [self.fbeta / len(self.docs.vocabulary)] *len(self.docs.vocabulary)
+
+        
         
         model_init = [1. / self.ntopics] * self.ntopics
         print "initial seed"
@@ -325,34 +374,34 @@ class LDAModel():
                     self.add(doc_id, term_id,i_topic)
                     i_word += 1     
 
-    def iterate(self):
+    def iterate(self, verbose = False):
         for doc_id, doc in enumerate(self.docs):
             i_word =0 
-            #print doc_id
             for term_id in doc:
                 for i_term_occ in xrange(doc[term_id]):
                     self.remove(doc_id, term_id, self.z_doc_word[doc_id][i_word])
                     param = [(self.nterm_by_topic_term[topic][term_id] + self.beta[term_id]) / ( self.nterm_by_topic[topic] + self.fbeta) * \
                             ( self.ntopic_by_doc_topic[doc_id][topic] +  self.alpha[topic]) / ( self.ntopic_by_doc[doc_id] + self.falpha) for topic in range(self.ntopics)]
-
                     new_topic = indice(multinomial(1, param))
                     self.z_doc_word[doc_id][i_word] = new_topic
                     self.add(doc_id, term_id, new_topic)
                     i_word += 1
-            if doc_id - (doc_id / 500)*500== 0:
-                #saveit()
+            if verbose and ismultiple(doc_id, 500):
                 print " doc : ", doc_id ,"/" , len(self.docs)
 
-    def run(self,niters,savestep):
+    def run(self,niters,savestep, burnin = 100):
         old_lik = -999999999999
         
         self.initialize()
-        for iter in range(niters):
-            print "iteration #", iter
+        for i_iter in range(niters):
             self.iterate()
-            if iter - (iter/savestep)*savestep == 0:
-                print self.loglikelihood()
-                #self.saveit(False, True , False)
+            new_lik = self.loglikelihood()
+            if i_iter - (i_iter/savestep)*savestep == 0:
+                print "Likelihood :", self.loglikelihood(), "iteration #", i_iter
+            if (new_lik - old_lik)/old_lik < 5.0/100 and i_iter > burnin:
+                print "converged", "iter #:", i_iter
+                self.saveit(False, True , False)
+                return
             
         
         
@@ -391,18 +440,15 @@ def main(argv=None):
         model.load('test.txt')
         model.saveit(True, False, False)
         model.info()
-        model.run(5000, 10)
+        model.run(1000, 50)
         model.saveit(True, True, True)
         
         print "fin"
-        
         
     except Usage, err:
         print >>sys.stderr, err.msg
         print >>sys.stderr, "for help use --help"
         return 2
- 
- 
+  
 if __name__ == "__main__":
     sys.exit(main())
- 
