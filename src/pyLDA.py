@@ -7,7 +7,7 @@ From Gregor Heinrich's most excellent text 'Parameter estimation for text analys
 import sys, getopt
 import collections, math, array,numpy
 from scipy.special import gamma, gammaln
-import Image
+import Image, ImageOps
 
 import random, operator
 
@@ -50,7 +50,27 @@ def indicenbiggest(ar,n):
 def testindicebiggest():
     ar = [54.0, 50.0, 53.0, 47.0, 50.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
     print indicenbiggest(ar,20)
- 
+    
+def topics2image2(ar, zoom = 1):
+    square_size = int(math.sqrt(len(ar[0])))
+    topics = Image.new("L", ((square_size*zoom+5)* len(ar), square_size*zoom+10),200)
+    imzoom = numpy.ones((zoom,zoom), numpy.uint8)
+    maxval = numpy.ones(square_size)
+
+    for topic in range(len(ar)):
+        pixels = numpy.zeros((square_size,square_size), numpy.uint8)
+        for i in range(square_size):
+            pixels[i,:]  =  map(lambda x:255*x, ar[topic][i*square_size:(i+1)*square_size ])
+        #print pixels
+        pixels = numpy.kron(pixels, imzoom)
+        pixels = (255 - pixels)
+        img = Image.fromarray(pixels,"L")#.convert("RGB")
+        
+#        img = ImageOps.convert(img)                
+        img = ImageOps.autocontrast(img)        
+        img = ImageOps.colorize(img, (0,0,0), (255,255,255))
+        topics.paste(img, (1+(square_size*zoom+5)*topic, 5))
+    return topics
  
 def flatten(x):
     result = []
@@ -222,8 +242,10 @@ list of words
         for val in [0,2,3]: 
             topics[i_count] = normalize(oneincol(zeros((npixels,npixels)), val).flatten())
             i_count +=1
-            
-
+        
+        imtopics = topics2image2(topics.tolist(),10)
+        imtopics.save("originaltopics.png")
+        
         alpha = [1./ntopics]* ntopics
         for doc_id in range(ndocs):
             topicsproportions = numpy.random.dirichlet(alpha)
@@ -348,24 +370,11 @@ class LDAModel():
                     ndocs_topics[topic] += self.ntopic_by_doc_topic[doc_id][topic]
             print "Docs per topics :",  "(total)", sum( ndocs_topics), ndocs_topics
             
+ 
+            
     def topics2images(self, name="", zoom = 1):
         phi, theta = self.phi_theta()
-        
-        square_size = int(math.sqrt(len(phi[0])))
-
-        topics = Image.new("L", ((square_size*zoom+2)*self.ntopics, square_size*zoom+10),255)
-        imzoom = numpy.ones((zoom,zoom), numpy.uint8)
-        maxval = numpy.ones(square_size)
-        
-        for topic in range(self.ntopics):
-            pixels = numpy.zeros((square_size,square_size), numpy.uint8)
-            for i in range(square_size):
-                pixels[i,:]  =  map(lambda x: 255*min(1,square_size*x), phi[topic,i*square_size:(i+1)*square_size ])
-            #print pixels
-            pixels = numpy.kron(pixels, zoom)
-            pixels = (255 - pixels)
-            img = Image.fromarray(pixels,"L")
-            topics.paste(img, ((square_size+2)*zoom*topic, 5))
+        topics = topics2image2(phi, zoom)
         topics.save("topics" + name + ".png")
             
     def info(self):
@@ -427,7 +436,7 @@ class LDAModel():
             if i_iter - (i_iter/savestep)*savestep == 0:
                 if verbose:
                     print "saving image"
-                self.topics2images(str(i_iter))
+                self.topics2images(str(i_iter),10)
                 print "Likelihood :", self.loglikelihood(), "iteration #", i_iter
             if (new_lik - old_lik)/old_lik < 1.0/100 and i_iter > burnin:
                 print "converged", "iter #:", i_iter
