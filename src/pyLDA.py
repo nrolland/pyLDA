@@ -206,42 +206,44 @@ list of words
                 docfile.write(msg)
         docfile.close()
         vocfile = file(directory+"/vocab." + commonfilename,"w")
-        for term in enumerate(self.vocabulary):
+        for term in self.vocabulary:
             vocfile.write(str(term)  + "\n")
         vocfile.close()
         
-    def loadtest(self):#require numpy
-        topics = numpy.matrix(zeros((6,25)))
-        topics[0] = oneinrow(zeros((5,5)), 0).flatten()/5 #0, 1, 2 , 3, 4
-        topics[1] = oneinrow(zeros((5,5)), 2).flatten()/5 #10, 11, 12, 13, 14
-        topics[2] = oneinrow(zeros((5,5)), 4).flatten()/5 #15, 16, 17, 18, 19
-        topics[3] = oneincol(zeros((5,5)), 0).flatten()/5 #0, 5, 10, 15, 20
-        topics[4] = oneincol(zeros((5,5)), 2).flatten()/5 #2, 7, 12, 17, 22
-        topics[5] = oneincol(zeros((5,5)), 3).flatten()/5 #3, 8, 13, 18, 23 
+    def loadtest(self, npixels=50, ndocs =500, ntopics=6):#require numpy
         
-        alpha = [1./len(topics)]* len(topics)
-        for doc_id in range(100):
+        topics = numpy.matrix(zeros((ntopics,npixels**2)))
+
+        i_count = 0
+        for val in  [0,2,4]: 
+            topics[i_count] = normalize(oneinrow(zeros((npixels,npixels)), val).flatten())
+            i_count +=1
+
+        for val in [0,2,3]: 
+            topics[i_count] = normalize(oneincol(zeros((npixels,npixels)), val).flatten())
+            i_count +=1
+            
+
+        alpha = [1./ntopics]* ntopics
+        for doc_id in range(ndocs):
             topicsproportions = numpy.random.dirichlet(alpha)
-            #print type(topicsproportions),topicsproportions.transpose().shape
-            #print type(topics),topics.shape
             distrib =  topicsproportions * topics
-            #print distrib.sum() == 1
 
             doc = BagOfWordDoc()
-            words = multinomial(50, distrib.tolist()[0], 1)
+            words = multinomial(npixels**2, distrib.tolist()[0], 1)
             for word_id, wordcount in enumerate(words): 
                 if wordcount > 0:
                     doc[word_id] = wordcount
             self.append(doc)
             
         vocab = dict()
-        for term_id in range(25):
+        for term_id in range(npixels**2):
              vocab[term_id] = term_id
-        self.vocabulary = [i for i in range(25)]
+        self.vocabulary = range(npixels**2)
         
 
         
-    def read(self, commonfilename, directory=".", verbose = False):
+    def read(self, commonfilename, directory="."):
         '''
 name : common part of the name e.g. xxx for docword.xxx and vocab.xxx
 '''
@@ -266,13 +268,12 @@ name : common part of the name e.g. xxx for docword.xxx and vocab.xxx
             doc = self[-1]
             maxterm_id = max(maxterm_id, term_id)
             minterm_id = min(minterm_id, term_id)
-            if verbose and last != doc_id and ismultiple(doc_id, 1000):
+            if verbose_read and last != doc_id and ismultiple(doc_id, 1000):
                 print str((doc_id *100) / self.M) + "%"
                 last = doc_id
             doc[term_id] = doc_word_count
         if maxterm_id - minterm_id + 1 != self.V:
-            print "warning"
-
+            print "warning : maxterm_id", maxterm_id, "minterm_id", minterm_id, "V size :", self.V
  
 class LDAModel():
     def __init__(self):
@@ -347,23 +348,24 @@ class LDAModel():
                     ndocs_topics[topic] += self.ntopic_by_doc_topic[doc_id][topic]
             print "Docs per topics :",  "(total)", sum( ndocs_topics), ndocs_topics
             
-    def topics2images(self, name=""):
-        
-        topics = Image.new("L", ((5*5+2)*6, 5*5+10),255)
-
+    def topics2images(self, name="", zoom = 1):
         phi, theta = self.phi_theta()
         
-        zoom = numpy.ones((5,5), numpy.uint8)
+        square_size = int(math.sqrt(len(phi[0])))
+
+        topics = Image.new("L", ((square_size*zoom+2)*self.ntopics, square_size*zoom+10),255)
+        imzoom = numpy.ones((zoom,zoom), numpy.uint8)
+        maxval = numpy.ones(square_size)
         
         for topic in range(self.ntopics):
-            pixels = numpy.zeros((5,5), numpy.uint8)
-            for i in range(5):
-                pixels[i,:] = 255*phi[topic,i*5:(i+1)*5 ]
+            pixels = numpy.zeros((square_size,square_size), numpy.uint8)
+            for i in range(square_size):
+                pixels[i,:]  =  map(lambda x: 255*min(1,square_size*x), phi[topic,i*square_size:(i+1)*square_size ])
             #print pixels
             pixels = numpy.kron(pixels, zoom)
             pixels = (255 - pixels)
             img = Image.fromarray(pixels,"L")
-            topics.paste(img, ((5+2)*5*topic, 5))
+            topics.paste(img, ((square_size+2)*zoom*topic, 5))
         topics.save("topics" + name + ".png")
             
     def info(self):
@@ -400,7 +402,7 @@ class LDAModel():
                     self.add(doc_id, term_id,i_topic)
                     i_word += 1     
 
-    def iterate(self, verbose = False):
+    def iterate(self):
         for doc_id, doc in enumerate(self.docs):
             i_word =0 
             for term_id in doc:
@@ -412,7 +414,7 @@ class LDAModel():
                     self.z_doc_word[doc_id][i_word] = new_topic
                     self.add(doc_id, term_id, new_topic)
                     i_word += 1
-            if verbose and ismultiple(doc_id, 500):
+            if n_verbose_iterate > -1 and ismultiple(doc_id, n_verbose_iterate):
                 print " doc : ", doc_id ,"/" , len(self.docs)
 
     def run(self,niters,savestep, burnin = 100):
@@ -423,6 +425,8 @@ class LDAModel():
             self.iterate()
             new_lik = self.loglikelihood()
             if i_iter - (i_iter/savestep)*savestep == 0:
+                if verbose:
+                    print "saving image"
                 self.topics2images(str(i_iter))
                 print "Likelihood :", self.loglikelihood(), "iteration #", i_iter
             if (new_lik - old_lik)/old_lik < 1.0/100 and i_iter > burnin:
@@ -433,6 +437,10 @@ class LDAModel():
 class Usage(Exception):
     def __init__(self, msg):
         self.msg = msg
+
+verbose =False
+verbose_read = False
+n_verbose_iterate  = 50
 
 def main(argv=None):
     if argv is None:
@@ -457,13 +465,17 @@ def main(argv=None):
 
         model = LDAModel()
         
-        #model.load('enron.dev.txt','../trainingdocs')
-        #model.docs.loadtest()
-        #model.docs.write('test.txt')
-        model.load('test.txt')
+        if False:
+            model.load('enron.dev.txt','../trainingdocs')
+        elif False:
+            model.docs.loadtest(5, 1000)
+            model.docs.write('test.bigger.txt')
+        elif True:
+            model.load('test.bigger.txt')
+
         model.saveit(True, False, False)
         model.info()
-        model.run(300, 5)
+        model.run(300, 1)
         model.saveit(True, True, True)
         
         print "fin"
