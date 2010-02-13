@@ -349,18 +349,21 @@ class LDAModel():
             
     def topics2images(self, name=""):
         
-        topics = Image.new("L", ((5+2)*6, 5+10),255)
+        topics = Image.new("L", ((5*5+2)*6, 5*5+10),255)
 
         phi, theta = self.phi_theta()
-
+        
+        zoom = numpy.ones((5,5), numpy.uint8)
+        
         for topic in range(self.ntopics):
             pixels = numpy.zeros((5,5), numpy.uint8)
             for i in range(5):
                 pixels[i,:] = 255*phi[topic,i*5:(i+1)*5 ]
             #print pixels
-            pixels = (1 - pixels) * 255.
+            pixels = numpy.kron(pixels, zoom)
+            pixels = (255 - pixels)
             img = Image.fromarray(pixels,"L")
-            topics.paste(img, ((5+2)*topic, 5))
+            topics.paste(img, ((5+2)*5*topic, 5))
         topics.save("topics" + name + ".png")
             
     def info(self):
@@ -420,7 +423,7 @@ class LDAModel():
             self.iterate()
             new_lik = self.loglikelihood()
             if i_iter - (i_iter/savestep)*savestep == 0:
-                #self.topics2images(str(i_iter))
+                self.topics2images(str(i_iter))
                 print "Likelihood :", self.loglikelihood(), "iteration #", i_iter
             if (new_lik - old_lik)/old_lik < 1.0/100 and i_iter > burnin:
                 print "converged", "iter #:", i_iter
